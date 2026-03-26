@@ -1,11 +1,23 @@
 "use client";
 
 import { Role } from "@prisma/client";
+import { type ColumnDef } from "@tanstack/react-table";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import * as ScrollArea from "@radix-ui/react-scroll-area";
-import { KeyRound, Loader2, Plus, RotateCcw, ShieldCheck, SquarePen, Trash2 } from "lucide-react";
+import {
+  ArrowUpDown,
+  KeyRound,
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  RotateCcw,
+  ShieldCheck,
+  SquarePen,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { DataTable } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { useAdminToast } from "@/features/admin/components/admin-toast";
 import { roles } from "@/lib/auth/roles";
@@ -34,6 +46,15 @@ type PasswordForm = {
   confirmPassword: string;
 };
 
+type PendingAction =
+  | "create"
+  | "edit"
+  | "role"
+  | "password"
+  | "delete"
+  | "reactivate"
+  | null;
+
 const defaultCreateForm: UserForm & { password: string } = {
   name: "",
   email: "",
@@ -52,7 +73,8 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
 
-  const [submitting, setSubmitting] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const isPending = pendingAction !== null;
 
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
 
@@ -85,37 +107,42 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
   );
 
   function openEditModal(user: UserItem) {
+    if (isPending) return;
     setSelectedUser(user);
     setEditForm({ name: user.name, email: user.email, role: user.role });
     setEditOpen(true);
   }
 
   function openRoleModal(user: UserItem) {
+    if (isPending) return;
     setSelectedUser(user);
     setRoleForm({ role: user.role });
     setRoleOpen(true);
   }
 
   function openPasswordModal(user: UserItem) {
+    if (isPending) return;
     setSelectedUser(user);
     setPasswordForm({ password: "", confirmPassword: "" });
     setPasswordOpen(true);
   }
 
   function openDeleteModal(user: UserItem) {
+    if (isPending) return;
     setSelectedUser(user);
     setDeleteOpen(true);
   }
 
   function openReactivateModal(user: UserItem) {
+    if (isPending) return;
     setSelectedUser(user);
     setReactivateOpen(true);
   }
 
   async function createUser() {
-    if (submitting) return;
+    if (isPending) return;
 
-    setSubmitting(true);
+    setPendingAction("create");
 
     try {
       const response = await fetch("/api/admin/users", {
@@ -134,18 +161,16 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
       setCreateForm(defaultCreateForm);
       showSuccess("User created successfully.");
     } catch (createError) {
-      showError(
-        createError instanceof Error ? createError.message : "Unexpected error.",
-      );
+      showError(createError instanceof Error ? createError.message : "Unexpected error.");
     } finally {
-      setSubmitting(false);
+      setPendingAction(null);
     }
   }
 
   async function updateUser() {
-    if (!selectedUser || submitting) return;
+    if (!selectedUser || isPending) return;
 
-    setSubmitting(true);
+    setPendingAction("edit");
 
     try {
       const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
@@ -159,25 +184,21 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
         throw new Error(json.error ?? "Failed to update user.");
       }
 
-      setUsers((prev) =>
-        prev.map((item) => (item.id === selectedUser.id ? (json.user as UserItem) : item)),
-      );
+      setUsers((prev) => prev.map((item) => (item.id === selectedUser.id ? (json.user as UserItem) : item)));
       setEditOpen(false);
       setSelectedUser(null);
       showSuccess("User updated successfully.");
     } catch (updateError) {
-      showError(
-        updateError instanceof Error ? updateError.message : "Unexpected error.",
-      );
+      showError(updateError instanceof Error ? updateError.message : "Unexpected error.");
     } finally {
-      setSubmitting(false);
+      setPendingAction(null);
     }
   }
 
   async function updateRole() {
-    if (!selectedUser || submitting) return;
+    if (!selectedUser || isPending) return;
 
-    setSubmitting(true);
+    setPendingAction("role");
 
     try {
       const response = await fetch(`/api/admin/users/${selectedUser.id}/role`, {
@@ -202,12 +223,12 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
     } catch (roleError) {
       showError(roleError instanceof Error ? roleError.message : "Unexpected error.");
     } finally {
-      setSubmitting(false);
+      setPendingAction(null);
     }
   }
 
   async function updatePassword() {
-    if (!selectedUser || submitting) return;
+    if (!selectedUser || isPending) return;
 
     if (passwordForm.password.length < 6) {
       showError("Password must be at least 6 characters.");
@@ -219,7 +240,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
       return;
     }
 
-    setSubmitting(true);
+    setPendingAction("password");
 
     try {
       const response = await fetch(`/api/admin/users/${selectedUser.id}/password`, {
@@ -238,26 +259,23 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
       setPasswordForm({ password: "", confirmPassword: "" });
       showSuccess("Password changed successfully.");
     } catch (passwordError) {
-      showError(
-        passwordError instanceof Error
-          ? passwordError.message
-          : "Unexpected error.",
-      );
+      showError(passwordError instanceof Error ? passwordError.message : "Unexpected error.");
     } finally {
-      setSubmitting(false);
+      setPendingAction(null);
     }
   }
 
   async function softDeleteUser() {
-    if (!selectedUser || submitting) return;
+    if (!selectedUser || isPending) return;
 
-    setSubmitting(true);
+    setPendingAction("delete");
 
     try {
       const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
         method: "DELETE",
       });
       const json = (await response.json()) as { error?: string; deletedAt?: string };
+
       if (!response.ok) {
         throw new Error(json.error ?? "Failed to archive user.");
       }
@@ -273,18 +291,16 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
       setSelectedUser(null);
       showSuccess("User archived successfully.");
     } catch (deleteError) {
-      showError(
-        deleteError instanceof Error ? deleteError.message : "Unexpected error.",
-      );
+      showError(deleteError instanceof Error ? deleteError.message : "Unexpected error.");
     } finally {
-      setSubmitting(false);
+      setPendingAction(null);
     }
   }
 
   async function reactivateUser() {
-    if (!selectedUser || submitting) return;
+    if (!selectedUser || isPending) return;
 
-    setSubmitting(true);
+    setPendingAction("reactivate");
 
     try {
       const response = await fetch(`/api/admin/users/${selectedUser.id}/reactivate`, {
@@ -295,118 +311,201 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
         throw new Error(json.error ?? "Failed to reactivate user.");
       }
 
-      setUsers((prev) =>
-        prev.map((item) => (item.id === selectedUser.id ? (json.user as UserItem) : item)),
-      );
+      setUsers((prev) => prev.map((item) => (item.id === selectedUser.id ? (json.user as UserItem) : item)));
       setReactivateOpen(false);
       setSelectedUser(null);
       showSuccess("User reactivated successfully.");
     } catch (reactivateError) {
-      showError(
-        reactivateError instanceof Error
-          ? reactivateError.message
-          : "Unexpected error.",
-      );
+      showError(reactivateError instanceof Error ? reactivateError.message : "Unexpected error.");
     } finally {
-      setSubmitting(false);
+      setPendingAction(null);
     }
   }
+
+  const userColumns: ColumnDef<UserItem>[] = [
+      {
+        accessorKey: "name",
+        header: ({ column }) => (
+          <button
+            type="button"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+            className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+          >
+            Name
+            <ArrowUpDown className="h-3.5 w-3.5" />
+          </button>
+        ),
+        cell: ({ row }) => <span className="font-medium text-neutral-900 dark:text-white">{row.original.name}</span>,
+      },
+      {
+        accessorKey: "email",
+        header: "Email",
+        cell: ({ row }) => row.original.email,
+      },
+      {
+        accessorKey: "role",
+        header: "Role",
+        cell: ({ row }) => (
+          <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300">
+            {row.original.role}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: ({ column }) => (
+          <button
+            type="button"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+            className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+          >
+            Created
+            <ArrowUpDown className="h-3.5 w-3.5" />
+          </button>
+        ),
+        cell: ({ row }) => row.original.createdAt,
+      },
+      {
+        id: "actions",
+        enableSorting: false,
+        header: "Actions",
+        cell: ({ row }) => {
+          const user = row.original;
+
+          return (
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  className="inline-flex items-center rounded-lg border border-neutral-200 p-1.5 text-neutral-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="z-50 min-w-44 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+                  <DropdownMenu.Item
+                    onClick={() => openEditModal(user)}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  >
+                    <SquarePen className="h-3.5 w-3.5" />
+                    Edit
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={() => openRoleModal(user)}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Role
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={() => openPasswordModal(user)}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    Password
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={() => openDeleteModal(user)}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-600 outline-none hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Archive
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          );
+        },
+      },
+  ];
+
+  const archivedColumns: ColumnDef<UserItem>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => <span className="font-medium text-neutral-900 dark:text-white">{row.original.name}</span>,
+    },
+    {
+      accessorKey: "email",
+      header: "Email",
+      cell: ({ row }) => row.original.email,
+    },
+    {
+      accessorKey: "deletedAt",
+      header: ({ column }) => (
+        <button
+          type="button"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+        >
+          Archived At
+          <ArrowUpDown className="h-3.5 w-3.5" />
+        </button>
+      ),
+      cell: ({ row }) => row.original.deletedAt ?? "-",
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      header: "Action",
+      cell: ({ row }) => {
+        const user = row.original;
+
+        return (
+          <button
+            type="button"
+            onClick={() => openReactivateModal(user)}
+            disabled={isPending}
+            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-900/60 dark:text-emerald-300"
+          >
+            {pendingAction === "reactivate" && selectedUser?.id === user.id ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}
+            Reactivate
+          </button>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-6 dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">Users Management</h2>
             <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-              All user actions are handled through confirmation modals.
+              All user actions are handled through confirmation modals and protected by single-action processing.
             </p>
           </div>
 
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-500/25"
+            disabled={isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Plus className="h-4 w-4" />
+            {pendingAction === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             New
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <ScrollArea.Root className="w-full overflow-hidden rounded-lg border border-neutral-200/60 dark:border-neutral-800/60">
-            <ScrollArea.Viewport className="w-full">
-              <table className="min-w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-                    <th className="px-2 py-2 font-medium">Name</th>
-                    <th className="px-2 py-2 font-medium">Email</th>
-                    <th className="px-2 py-2 font-medium">Role</th>
-                    <th className="px-2 py-2 font-medium">Created</th>
-                    <th className="px-2 py-2 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeUsers.map((user) => (
-                    <tr key={user.id} className="border-b border-neutral-100 dark:border-neutral-800">
-                      <td className="px-2 py-3 text-neutral-900 dark:text-white">{user.name}</td>
-                      <td className="px-2 py-3 text-neutral-700 dark:text-neutral-300">{user.email}</td>
-                      <td className="px-2 py-3 text-neutral-700 dark:text-neutral-300">{user.role}</td>
-                      <td className="px-2 py-3 text-neutral-700 dark:text-neutral-300">{user.createdAt}</td>
-                      <td className="px-2 py-3">
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger asChild>
-                            <button
-                              type="button"
-                              className="rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-700 dark:border-neutral-700 dark:text-neutral-300"
-                            >
-                              Manage
-                            </button>
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Portal>
-                            <DropdownMenu.Content className="z-50 min-w-44 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-                              <DropdownMenu.Item
-                                onClick={() => openEditModal(user)}
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                              >
-                                <SquarePen className="h-3.5 w-3.5" />
-                                Edit
-                              </DropdownMenu.Item>
-                              <DropdownMenu.Item
-                                onClick={() => openRoleModal(user)}
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                              >
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                                Role
-                              </DropdownMenu.Item>
-                              <DropdownMenu.Item
-                                onClick={() => openPasswordModal(user)}
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                              >
-                                <KeyRound className="h-3.5 w-3.5" />
-                                Password
-                              </DropdownMenu.Item>
-                              <DropdownMenu.Item
-                                onClick={() => openDeleteModal(user)}
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-600 outline-none hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Delete
-                              </DropdownMenu.Item>
-                            </DropdownMenu.Content>
-                          </DropdownMenu.Portal>
-                        </DropdownMenu.Root>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollArea.Viewport>
-            <ScrollArea.Scrollbar orientation="vertical" className="w-2.5 p-0.5">
-              <ScrollArea.Thumb className="rounded-full bg-neutral-300 dark:bg-neutral-700" />
-            </ScrollArea.Scrollbar>
-          </ScrollArea.Root>
+        <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+          <Users className="h-3.5 w-3.5" />
+          {activeUsers.length} active users, {archivedUsers.length} archived users
         </div>
+
+        <DataTable
+          columns={userColumns}
+          data={activeUsers}
+          filterColumnId="name"
+          filterPlaceholder="Search user name..."
+          emptyMessage="No active users found."
+        />
       </section>
 
       {archivedUsers.length > 0 ? (
@@ -415,44 +514,21 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
           <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
             Reactivate archived users when needed.
           </p>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-                  <th className="px-2 py-2 font-medium">Name</th>
-                  <th className="px-2 py-2 font-medium">Email</th>
-                  <th className="px-2 py-2 font-medium">Archived At</th>
-                  <th className="px-2 py-2 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {archivedUsers.map((user) => (
-                  <tr key={user.id} className="border-b border-neutral-100 dark:border-neutral-800">
-                    <td className="px-2 py-3 text-neutral-900 dark:text-white">{user.name}</td>
-                    <td className="px-2 py-3 text-neutral-700 dark:text-neutral-300">{user.email}</td>
-                    <td className="px-2 py-3 text-neutral-700 dark:text-neutral-300">{user.deletedAt}</td>
-                    <td className="px-2 py-3">
-                      <button
-                        type="button"
-                        onClick={() => openReactivateModal(user)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:text-emerald-300"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        Reactivate
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <DataTable
+              columns={archivedColumns}
+              data={archivedUsers}
+              filterColumnId="name"
+              filterPlaceholder="Search archived user..."
+              emptyMessage="No archived users found."
+            />
           </div>
         </section>
       ) : null}
 
       <Modal
         open={createOpen}
-        onClose={() => (submitting ? null : setCreateOpen(false))}
+        onClose={() => (isPending ? null : setCreateOpen(false))}
         title="Create user"
         description="Confirm new user creation."
         footer={
@@ -460,7 +536,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={() => setCreateOpen(false)}
-              disabled={submitting}
+              disabled={isPending}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
             >
               Cancel
@@ -468,10 +544,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={createUser}
-              disabled={submitting}
+              disabled={isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pendingAction === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Create
             </button>
           </>
@@ -481,9 +557,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
           <input
             required
             value={createForm.name}
-            onChange={(event) =>
-              setCreateForm((prev) => ({ ...prev, name: event.target.value }))
-            }
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
             placeholder="Full name"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
@@ -491,9 +565,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             required
             type="email"
             value={createForm.email}
-            onChange={(event) =>
-              setCreateForm((prev) => ({ ...prev, email: event.target.value }))
-            }
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, email: event.target.value }))}
             placeholder="Email"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
@@ -502,17 +574,13 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             type="password"
             minLength={6}
             value={createForm.password}
-            onChange={(event) =>
-              setCreateForm((prev) => ({ ...prev, password: event.target.value }))
-            }
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
             placeholder="Password"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
           <select
             value={createForm.role}
-            onChange={(event) =>
-              setCreateForm((prev) => ({ ...prev, role: event.target.value as Role }))
-            }
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, role: event.target.value as Role }))}
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           >
             {roles.map((role) => (
@@ -526,7 +594,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
 
       <Modal
         open={editOpen}
-        onClose={() => (submitting ? null : setEditOpen(false))}
+        onClose={() => (isPending ? null : setEditOpen(false))}
         title="Edit user"
         description="Confirm profile and role updates."
         footer={
@@ -534,7 +602,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={() => setEditOpen(false)}
-              disabled={submitting}
+              disabled={isPending}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
             >
               Cancel
@@ -542,10 +610,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={updateUser}
-              disabled={submitting}
+              disabled={isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pendingAction === "edit" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Edit
             </button>
           </>
@@ -555,9 +623,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
           <input
             required
             value={editForm.name}
-            onChange={(event) =>
-              setEditForm((prev) => ({ ...prev, name: event.target.value }))
-            }
+            onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
             placeholder="Full name"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
@@ -565,17 +631,13 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             required
             type="email"
             value={editForm.email}
-            onChange={(event) =>
-              setEditForm((prev) => ({ ...prev, email: event.target.value }))
-            }
+            onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))}
             placeholder="Email"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
           <select
             value={editForm.role}
-            onChange={(event) =>
-              setEditForm((prev) => ({ ...prev, role: event.target.value as Role }))
-            }
+            onChange={(event) => setEditForm((prev) => ({ ...prev, role: event.target.value as Role }))}
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           >
             {roles.map((role) => (
@@ -589,7 +651,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
 
       <Modal
         open={roleOpen}
-        onClose={() => (submitting ? null : setRoleOpen(false))}
+        onClose={() => (isPending ? null : setRoleOpen(false))}
         title="Change role"
         description={`Confirm role change for ${selectedUser?.email ?? "this user"}.`}
         footer={
@@ -597,7 +659,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={() => setRoleOpen(false)}
-              disabled={submitting}
+              disabled={isPending}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
             >
               Cancel
@@ -605,10 +667,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={updateRole}
-              disabled={submitting}
+              disabled={isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pendingAction === "role" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Role Change
             </button>
           </>
@@ -629,7 +691,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
 
       <Modal
         open={passwordOpen}
-        onClose={() => (submitting ? null : setPasswordOpen(false))}
+        onClose={() => (isPending ? null : setPasswordOpen(false))}
         title="Change password"
         description={`Confirm password update for ${selectedUser?.email ?? "this user"}.`}
         footer={
@@ -637,7 +699,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={() => setPasswordOpen(false)}
-              disabled={submitting}
+              disabled={isPending}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
             >
               Cancel
@@ -645,10 +707,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={updatePassword}
-              disabled={submitting}
+              disabled={isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pendingAction === "password" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Password Change
             </button>
           </>
@@ -659,9 +721,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             type="password"
             minLength={6}
             value={passwordForm.password}
-            onChange={(event) =>
-              setPasswordForm((prev) => ({ ...prev, password: event.target.value }))
-            }
+            onChange={(event) => setPasswordForm((prev) => ({ ...prev, password: event.target.value }))}
             placeholder="New password"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
@@ -669,12 +729,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             type="password"
             minLength={6}
             value={passwordForm.confirmPassword}
-            onChange={(event) =>
-              setPasswordForm((prev) => ({
-                ...prev,
-                confirmPassword: event.target.value,
-              }))
-            }
+            onChange={(event) => setPasswordForm((prev) => ({
+              ...prev,
+              confirmPassword: event.target.value,
+            }))}
             placeholder="Confirm new password"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
@@ -683,7 +741,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
 
       <Modal
         open={deleteOpen}
-        onClose={() => (submitting ? null : setDeleteOpen(false))}
+        onClose={() => (isPending ? null : setDeleteOpen(false))}
         title="Delete user"
         description={`Soft delete ${selectedUser?.email ?? "this user"}? This user will be hidden from the list and blocked from login.`}
         icon={<Trash2 className="h-5 w-5" />}
@@ -692,7 +750,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={() => setDeleteOpen(false)}
-              disabled={submitting}
+              disabled={isPending}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
             >
               Cancel
@@ -700,10 +758,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={softDeleteUser}
-              disabled={submitting}
+              disabled={isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pendingAction === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Delete
             </button>
           </>
@@ -712,7 +770,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
 
       <Modal
         open={reactivateOpen}
-        onClose={() => (submitting ? null : setReactivateOpen(false))}
+        onClose={() => (isPending ? null : setReactivateOpen(false))}
         title="Reactivate user"
         description={`Reactivate ${selectedUser?.email ?? "this user"} and allow login access again?`}
         icon={<RotateCcw className="h-5 w-5" />}
@@ -721,7 +779,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={() => setReactivateOpen(false)}
-              disabled={submitting}
+              disabled={isPending}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
             >
               Cancel
@@ -729,10 +787,10 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             <button
               type="button"
               onClick={reactivateUser}
-              disabled={submitting}
+              disabled={isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pendingAction === "reactivate" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Reactivate
             </button>
           </>

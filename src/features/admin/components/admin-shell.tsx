@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Role } from "@prisma/client";
 import { Loader2, LogOut, Menu, Terminal, X } from "lucide-react";
+import NextTopLoader from "nextjs-toploader";
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -43,9 +44,18 @@ export function AdminShell({ children, userName, role }: AdminShellProps) {
 
   return (
     <div className="flex min-h-screen bg-neutral-50 dark:bg-neutral-950">
+      <NextTopLoader
+        color="#7c3aed"
+        height={3}
+        showSpinner={false}
+        easing="ease"
+        speed={250}
+        shadow="0 0 10px #7c3aed,0 0 5px #7c3aed"
+      />
+
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-neutral-200/60 bg-white transition-transform md:static md:translate-x-0 dark:border-neutral-800/60 dark:bg-neutral-950",
+          "fixed inset-y-0 left-0 z-40 flex h-dvh w-64 flex-col overflow-y-auto border-r border-neutral-200/60 bg-white transition-transform md:sticky md:top-0 md:h-screen md:translate-x-0 md:self-start dark:border-neutral-800/60 dark:bg-neutral-950",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >

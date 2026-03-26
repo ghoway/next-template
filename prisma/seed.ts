@@ -24,24 +24,27 @@ const prisma = isAccelerateUrl
     });
 
 async function main() {
-  const hashedPassword = hashSync("admin123", 12);
+  const demoPassword = "loremipsum123";
+  const hashedPassword = hashSync(demoPassword, 12);
+  const demoEmail = "john.doe@example.com";
+  const demoName = "John Doe";
 
   await prisma.user.upsert({
-    where: { email: "admin@admin.dev" },
+    where: { email: demoEmail },
     update: {
-      name: "Admin User",
+      name: demoName,
       hashedPassword,
       role: Role.ADMIN,
     },
     create: {
-      name: "Admin User",
-      email: "admin@admin.dev",
+      name: demoName,
+      email: demoEmail,
       hashedPassword,
       role: Role.ADMIN,
     },
   });
 
-  console.log("Seed complete. Admin credentials: admin@admin.dev / admin123");
+  console.log(`Seed complete. Demo admin credentials: ${demoEmail} / ${demoPassword}`);
 }
 
 main()
