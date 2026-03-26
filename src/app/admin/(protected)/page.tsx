@@ -1,18 +1,16 @@
-import { Role } from "@prisma/client";
-import { ArrowRight, ShieldAlert, ShieldCheck, Users, UserSquare2 } from "lucide-react";
+import { ArrowRight, ShieldAlert, Users, UserSquare2 } from "lucide-react";
 import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 
 export default async function AdminDashboardPage() {
-  await requireRole(Role.VIEWER);
+  await requireRole("USERS");
 
-  const [totalUsers, totalAdmins, totalEditors, totalViewers] = await Promise.all([
+  const [totalUsers, totalAdmins, totalRegularUsers] = await Promise.all([
     prisma.user.count({ where: { deletedAt: null } }),
-    prisma.user.count({ where: { role: Role.ADMIN, deletedAt: null } }),
-    prisma.user.count({ where: { role: Role.EDITOR, deletedAt: null } }),
-    prisma.user.count({ where: { role: Role.VIEWER, deletedAt: null } }),
+    prisma.user.count({ where: { role: "ADMIN", deletedAt: null } }),
+    prisma.user.count({ where: { role: { not: "ADMIN" }, deletedAt: null } }),
   ]);
 
   const widgets = [
@@ -24,22 +22,15 @@ export default async function AdminDashboardPage() {
       href: "/admin/users",
     },
     {
-      label: "Admins",
+      label: "Admin",
       value: totalAdmins,
       icon: ShieldAlert,
       accent: "from-rose-500/20 to-orange-500/10",
       href: "/admin/users",
     },
     {
-      label: "Editors",
-      value: totalEditors,
-      icon: ShieldCheck,
-      accent: "from-sky-500/20 to-cyan-500/10",
-      href: "/admin/users",
-    },
-    {
-      label: "Viewers",
-      value: totalViewers,
+      label: "User",
+      value: totalRegularUsers,
       icon: UserSquare2,
       accent: "from-emerald-500/20 to-teal-500/10",
       href: "/admin/users",
@@ -50,10 +41,10 @@ export default async function AdminDashboardPage() {
     <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
       <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Dashboard</h1>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-        Overview of template user access. Click any widget to jump to user management.
+        Overview of your current user access distribution.
       </p>
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {widgets.map((widget) => (
           <Link key={widget.label} href={widget.href}>
             <article className="group relative overflow-hidden rounded-xl border border-neutral-200/60 bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-violet-500/10 dark:border-neutral-800/60 dark:bg-neutral-900">

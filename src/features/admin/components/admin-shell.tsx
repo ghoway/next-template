@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Role } from "@prisma/client";
 import { Loader2, LogOut, Menu, Terminal, X } from "lucide-react";
 import NextTopLoader from "nextjs-toploader";
 import { signOut } from "next-auth/react";
@@ -9,7 +8,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { adminNavigation } from "@/features/admin/data/navigation";
-import { hasMinimumRole } from "@/lib/auth/roles";
+import { hasMinimumRoleLevel } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Modal } from "@/components/ui/modal";
@@ -18,10 +17,10 @@ import { AdminToastProvider } from "@/features/admin/components/admin-toast";
 type AdminShellProps = {
   children: React.ReactNode;
   userName: string;
-  role: Role;
+  roleLevel: number;
 };
 
-export function AdminShell({ children, userName, role }: AdminShellProps) {
+export function AdminShell({ children, userName, roleLevel }: AdminShellProps) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -29,8 +28,8 @@ export function AdminShell({ children, userName, role }: AdminShellProps) {
 
   const visibleLinks = useMemo(
     () =>
-      adminNavigation.filter((item) => hasMinimumRole(role, item.minimumRole)),
-    [role],
+      adminNavigation.filter((item) => hasMinimumRoleLevel(roleLevel, item.minimumRole)),
+    [roleLevel],
   );
 
   async function handleSignOut() {

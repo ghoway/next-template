@@ -6,10 +6,18 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Role {
-  ADMIN
-  EDITOR
-  VIEWER
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  level       Int      @default(1)
+  isSystem    Boolean  @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[] @relation("UserRole")
 }
 
 model User {
@@ -17,8 +25,11 @@ model User {
   name           String
   email          String   @unique
   hashedPassword String
-  role           Role     @default(VIEWER)
+  role           String   @default("USERS")
+  roleMeta       Role     @relation("UserRole", fields: [role], references: [key])
   deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([role])
 }

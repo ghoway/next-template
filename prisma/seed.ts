@@ -5,7 +5,7 @@ loadEnv({ path: ".env.local" });
 loadEnv();
 
 import { hashSync } from "bcryptjs";
-import { PrismaClient, Role } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -24,6 +24,42 @@ const prisma = isAccelerateUrl
     });
 
 async function main() {
+  await prisma.role.upsert({
+    where: { key: "ADMIN" },
+    update: {
+      name: "Admin",
+      description: "Full access to all admin features.",
+      level: 100,
+      isSystem: true,
+      deletedAt: null,
+    },
+    create: {
+      key: "ADMIN",
+      name: "Admin",
+      description: "Full access to all admin features.",
+      level: 100,
+      isSystem: true,
+    },
+  });
+
+  await prisma.role.upsert({
+    where: { key: "USERS" },
+    update: {
+      name: "Users",
+      description: "Default role for regular application users.",
+      level: 10,
+      isSystem: true,
+      deletedAt: null,
+    },
+    create: {
+      key: "USERS",
+      name: "Users",
+      description: "Default role for regular application users.",
+      level: 10,
+      isSystem: true,
+    },
+  });
+
   const demoPassword = "loremipsum123";
   const hashedPassword = hashSync(demoPassword, 12);
   const demoEmail = "john.doe@example.com";
@@ -34,13 +70,13 @@ async function main() {
     update: {
       name: demoName,
       hashedPassword,
-      role: Role.ADMIN,
+      role: "ADMIN",
     },
     create: {
       name: demoName,
       email: demoEmail,
       hashedPassword,
-      role: Role.ADMIN,
+      role: "ADMIN",
     },
   });
 

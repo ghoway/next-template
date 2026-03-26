@@ -1,9 +1,9 @@
 import { hashSync } from "bcryptjs";
-import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { hasMinimumRole } from "@/lib/auth/rbac";
 import { prisma } from "@/lib/prisma";
 
 const updatePasswordSchema = z.object({
@@ -20,7 +20,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (session.user.role !== Role.ADMIN) {
+  if (!(await hasMinimumRole(session.user.role, "ADMIN"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -1,14 +1,15 @@
-import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { hasMinimumRole } from "@/lib/auth/rbac";
 import { prisma } from "@/lib/prisma";
+import { normalizeRoleKey } from "@/lib/auth/roles";
 
 const updateUserSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  role: z.nativeEnum(Role),
+  role: z.string().min(2),
 });
 
 type RouteContext = {
@@ -21,13 +22,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (session.user.role !== Role.ADMIN) {
+  if (!(await hasMinimumRole(session.user.role, "ADMIN"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {
     const { id } = await context.params;
     const body = updateUserSchema.parse(await request.json());
+    const roleKey = normalizeRoleKey(body.role);
 
     const current = await prisma.user.findUnique({
       where: { id },
@@ -52,12 +54,24 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
+    const existingRole = await prisma.role.findFirst({
+      where: { key: roleKey, deletedAt: null },
+      select: { key: true },
+    });
+
+    if (!existingRole) {
+      return NextResponse.json(
+        { error: "Selected role is not available." },
+        { status: 400 },
+      );
+    }
+
     const user = await prisma.user.update({
       where: { id },
       data: {
         name: body.name,
         email: body.email,
-        role: body.role,
+        role: roleKey,
       },
       select: {
         id: true,
@@ -85,7 +99,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (session.user.role !== Role.ADMIN) {
+  if (!(await hasMinimumRole(session.user.role, "ADMIN"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

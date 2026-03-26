@@ -1,9 +1,7 @@
-import { Role } from "@prisma/client";
-
 import { requireRole } from "@/lib/auth/session";
 
 export default async function AdminBlankPage() {
-  await requireRole(Role.EDITOR);
+  await requireRole("USERS");
 
   return (
     <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">

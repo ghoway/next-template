@@ -1,16 +1,17 @@
 import { hashSync } from "bcryptjs";
-import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { hasMinimumRole } from "@/lib/auth/rbac";
 import { prisma } from "@/lib/prisma";
+import { normalizeRoleKey } from "@/lib/auth/roles";
 
 const createUserSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  role: z.nativeEnum(Role),
+  role: z.string().min(2),
 });
 
 export async function POST(request: Request) {
@@ -19,12 +20,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (session.user.role !== Role.ADMIN) {
+  if (!(await hasMinimumRole(session.user.role, "ADMIN"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {
     const body = createUserSchema.parse(await request.json());
+    const roleKey = normalizeRoleKey(body.role);
     const existingUser = await prisma.user.findUnique({
       where: { email: body.email },
       select: { id: true, deletedAt: true },
@@ -44,12 +46,24 @@ export async function POST(request: Request) {
       );
     }
 
+    const existingRole = await prisma.role.findFirst({
+      where: { key: roleKey, deletedAt: null },
+      select: { key: true },
+    });
+
+    if (!existingRole) {
+      return NextResponse.json(
+        { error: "Selected role is not available." },
+        { status: 400 },
+      );
+    }
+
     const user = await prisma.user.create({
       data: {
         name: body.name,
         email: body.email,
         hashedPassword: hashSync(body.password, 12),
-        role: body.role,
+        role: roleKey,
       },
       select: {
         id: true,

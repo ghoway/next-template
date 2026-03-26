@@ -1,7 +1,7 @@
-import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
+import { hasMinimumRole } from "@/lib/auth/rbac";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = {
@@ -14,7 +14,7 @@ export async function PATCH(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (session.user.role !== Role.ADMIN) {
+  if (!(await hasMinimumRole(session.user.role, "ADMIN"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

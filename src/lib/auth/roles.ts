@@ -1,13 +1,23 @@
-import { Role } from "@prisma/client";
+export const SYSTEM_ROLE_KEYS = {
+  ADMIN: "ADMIN",
+  USERS: "USERS",
+} as const;
 
-export const roles = [Role.ADMIN, Role.EDITOR, Role.VIEWER] as const;
+export const DEFAULT_ROLE_KEY = SYSTEM_ROLE_KEYS.USERS;
 
-const priorityMap: Record<Role, number> = {
-  [Role.ADMIN]: 3,
-  [Role.EDITOR]: 2,
-  [Role.VIEWER]: 1,
+const fallbackPriorityMap: Record<string, number> = {
+  [SYSTEM_ROLE_KEYS.ADMIN]: 100,
+  [SYSTEM_ROLE_KEYS.USERS]: 10,
 };
 
-export function hasMinimumRole(current: Role, minimum: Role) {
-  return priorityMap[current] >= priorityMap[minimum];
+export function getFallbackRoleLevel(roleKey: string) {
+  return fallbackPriorityMap[roleKey] ?? 0;
+}
+
+export function hasMinimumRoleLevel(currentLevel: number, minimumRoleKey: string) {
+  return currentLevel >= getFallbackRoleLevel(minimumRoleKey);
+}
+
+export function normalizeRoleKey(input: string) {
+  return input.trim().toUpperCase().replace(/\s+/g, "_");
 }

@@ -1,20 +1,22 @@
 # Next Template
 
-Production-ready Next.js 16 starter with RBAC auth, Prisma, and an admin panel you can extend quickly.
+Production-ready Next.js 16 starter with JWT auth, dynamic RBAC, Prisma, and an extensible admin panel.
 
 ## Highlights
 
 - Next.js App Router + feature-sliced architecture (`src/features/*`)
 - Auth.js credentials login + signed JWT access/refresh token flow
-- RBAC roles: `ADMIN`, `EDITOR`, `VIEWER`
-- Prisma ORM with PostgreSQL and Prisma Accelerate support
+- Dynamic RBAC roles (database-backed): role CRUD from admin panel
+- Default system roles: `ADMIN`, `USERS`
+- Prisma ORM with PostgreSQL + Prisma Accelerate runtime support
 - Admin panel modules:
-  - Interactive dashboard widgets
-  - Users management (DataTable, search, sorting, confirm modals)
-  - Archived users DataTable + reactivate flow
+  - Dashboard widgets (`Total Users`, `Admin`, `User`)
+  - Users management (DataTable, search, sorting, confirmation modals)
+  - Archived users DataTable + reactivation flow
+  - Role Based CRUD (create, edit, remove role)
   - Blank starter module page
 - Route top-loader for admin navigation
-- Reusable UI primitives: modal, toast, table, DataTable
+- Reusable UI primitives: modal, toast, table, DataTable, shadcn Select
 - Light/dark mode toggle
 
 ## Tech Stack
@@ -30,7 +32,8 @@ Production-ready Next.js 16 starter with RBAC auth, Prisma, and an admin panel y
 
 - Node.js 20+
 - pnpm 10+
-- PostgreSQL URL (or Prisma Accelerate URL)
+- PostgreSQL URL
+- Optional Prisma Accelerate URL for runtime
 
 ## Quick Start
 
@@ -40,23 +43,24 @@ Production-ready Next.js 16 starter with RBAC auth, Prisma, and an admin panel y
 pnpm install
 ```
 
-2. Create `.env` (example values only)
+2. Create `.env` (example values only, no real credentials)
 
 ```env
 NEXT_PUBLIC_APP_NAME="Nextz Template"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 NEXT_PUBLIC_APP_API="http://localhost:3000/api"
-DATABASE_URL="postgresql://john_doe:lorem_ipsum@localhost:5432/next_template"
+DATABASE_URL="prisma+postgres://accelerate.prisma-data.net/?api_key=lorem_ipsum"
+DIRECT_DATABASE_URL="postgresql://john_doe:lorem_ipsum@localhost:5432/next_template?schema=public"
 AUTH_SECRET="lorem-ipsum-auth-secret-change-me"
 AUTH_JWT_SECRET="lorem-ipsum-jwt-secret-change-me"
 ACCESS_TOKEN_DAYS="3"
 REFRESH_TOKEN_DAYS="7"
 ```
 
-3. Push Prisma schema
+3. Reset/push Prisma schema (uses `DIRECT_DATABASE_URL` if present)
 
 ```bash
-pnpm db:push
+pnpm db:push -- --force-reset
 ```
 
 4. Seed demo admin user
@@ -81,6 +85,12 @@ Open: `http://localhost:3000`
 
 Use this account for local development only.
 
+## Authentication Behavior
+
+- If user is already authenticated, `/admin/login` redirects to `/admin`.
+- If `accessToken` expires, app attempts refresh using `refreshToken`.
+- If `refreshToken` is expired/invalid, user is redirected to sign in again.
+
 ## Available Scripts
 
 - `pnpm dev` - start development server
@@ -102,12 +112,15 @@ Use this account for local development only.
 ```text
 src/
   app/
+    api/admin/roles
+    api/admin/users
   components/
     ui/
   features/
   lib/
   types/
 prisma/
+  migrations/
   schema.prisma
   seed.ts
 ```

@@ -15,7 +15,7 @@ export default async function ProtectedAdminLayout({
       <TokenStorageSync />
       <AdminShell
         userName={session.user.name ?? session.user.email ?? "User"}
-        role={session.user.role}
+        roleLevel={session.user.roleLevel}
       >
         {children}
       </AdminShell>

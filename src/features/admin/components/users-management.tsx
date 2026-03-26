@@ -1,6 +1,5 @@
 "use client";
 
-import { Role } from "@prisma/client";
 import { type ColumnDef } from "@tanstack/react-table";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -19,31 +18,54 @@ import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAdminToast } from "@/features/admin/components/admin-toast";
-import { roles } from "@/lib/auth/roles";
 
 type UserItem = {
   id: string;
   name: string;
   email: string;
-  role: Role;
+  role: string;
   createdAt: string;
   deletedAt: string | null;
 };
 
+type RoleItem = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  level: number;
+  isSystem: boolean;
+};
+
 type UsersManagementProps = {
   initialUsers: UserItem[];
+  initialRoles: RoleItem[];
 };
 
 type UserForm = {
   name: string;
   email: string;
-  role: Role;
+  role: string;
 };
 
 type PasswordForm = {
   password: string;
   confirmPassword: string;
+};
+
+type RoleForm = {
+  key: string;
+  name: string;
+  description: string;
+  level: number;
 };
 
 type PendingAction =
@@ -53,17 +75,18 @@ type PendingAction =
   | "password"
   | "delete"
   | "reactivate"
+  | "role_create"
+  | "role_edit"
+  | "role_remove"
   | null;
 
-const defaultCreateForm: UserForm & { password: string } = {
-  name: "",
-  email: "",
-  role: Role.VIEWER,
-  password: "",
-};
+function sortRoles(input: RoleItem[]) {
+  return [...input].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name));
+}
 
-export function UsersManagement({ initialUsers }: UsersManagementProps) {
+export function UsersManagement({ initialUsers, initialRoles }: UsersManagementProps) {
   const [users, setUsers] = useState(initialUsers);
+  const [roles, setRoles] = useState(sortRoles(initialRoles));
   const { showError, showSuccess } = useAdminToast();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -73,21 +96,45 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
 
+  const [roleCreateOpen, setRoleCreateOpen] = useState(false);
+  const [roleEditOpen, setRoleEditOpen] = useState(false);
+  const [roleDeleteOpen, setRoleDeleteOpen] = useState(false);
+
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const isPending = pendingAction !== null;
 
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [selectedRole, setSelectedRole] = useState<RoleItem | null>(null);
 
-  const [createForm, setCreateForm] = useState(defaultCreateForm);
+  const defaultRole = roles.find((role) => role.key === "USERS")?.key ?? roles[0]?.key ?? "USERS";
+
+  const [createForm, setCreateForm] = useState<UserForm & { password: string }>({
+    name: "",
+    email: "",
+    role: defaultRole,
+    password: "",
+  });
   const [editForm, setEditForm] = useState<UserForm>({
     name: "",
     email: "",
-    role: Role.VIEWER,
+    role: defaultRole,
   });
-  const [roleForm, setRoleForm] = useState<{ role: Role }>({ role: Role.VIEWER });
+  const [roleForm, setRoleForm] = useState<{ role: string }>({ role: defaultRole });
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({
     password: "",
     confirmPassword: "",
+  });
+
+  const [roleCreateForm, setRoleCreateForm] = useState<RoleForm>({
+    key: "",
+    name: "",
+    description: "",
+    level: 20,
+  });
+  const [roleEditForm, setRoleEditForm] = useState<Omit<RoleForm, "key">>({
+    name: "",
+    description: "",
+    level: 20,
   });
 
   const activeUsers = useMemo(
@@ -139,6 +186,23 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
     setReactivateOpen(true);
   }
 
+  function openRoleEditModal(role: RoleItem) {
+    if (isPending) return;
+    setSelectedRole(role);
+    setRoleEditForm({
+      name: role.name,
+      description: role.description ?? "",
+      level: role.level,
+    });
+    setRoleEditOpen(true);
+  }
+
+  function openRoleDeleteModal(role: RoleItem) {
+    if (isPending) return;
+    setSelectedRole(role);
+    setRoleDeleteOpen(true);
+  }
+
   async function createUser() {
     if (isPending) return;
 
@@ -158,7 +222,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
 
       setUsers((prev) => [json.user as UserItem, ...prev]);
       setCreateOpen(false);
-      setCreateForm(defaultCreateForm);
+      setCreateForm({ name: "", email: "", role: defaultRole, password: "" });
       showSuccess("User created successfully.");
     } catch (createError) {
       showError(createError instanceof Error ? createError.message : "Unexpected error.");
@@ -322,103 +386,241 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
     }
   }
 
-  const userColumns: ColumnDef<UserItem>[] = [
-      {
-        accessorKey: "name",
-        header: ({ column }) => (
-          <button
-            type="button"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
-          >
-            Name
-            <ArrowUpDown className="h-3.5 w-3.5" />
-          </button>
-        ),
-        cell: ({ row }) => <span className="font-medium text-neutral-900 dark:text-white">{row.original.name}</span>,
-      },
-      {
-        accessorKey: "email",
-        header: "Email",
-        cell: ({ row }) => row.original.email,
-      },
-      {
-        accessorKey: "role",
-        header: "Role",
-        cell: ({ row }) => (
-          <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300">
-            {row.original.role}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "createdAt",
-        header: ({ column }) => (
-          <button
-            type="button"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
-          >
-            Created
-            <ArrowUpDown className="h-3.5 w-3.5" />
-          </button>
-        ),
-        cell: ({ row }) => row.original.createdAt,
-      },
-      {
-        id: "actions",
-        enableSorting: false,
-        header: "Actions",
-        cell: ({ row }) => {
-          const user = row.original;
+  async function createRole() {
+    if (isPending) return;
 
-          return (
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button
-                  type="button"
-                  disabled={isPending}
-                  className="inline-flex items-center rounded-lg border border-neutral-200 p-1.5 text-neutral-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300"
+    setPendingAction("role_create");
+
+    try {
+      const response = await fetch("/api/admin/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(roleCreateForm),
+      });
+
+      const json = (await response.json()) as { role?: RoleItem; error?: string };
+      if (!response.ok || !json.role) {
+        throw new Error(json.error ?? "Failed to create role.");
+      }
+
+      setRoles((prev) => sortRoles([json.role as RoleItem, ...prev.filter((item) => item.id !== json.role?.id)]));
+      setRoleCreateOpen(false);
+      setRoleCreateForm({ key: "", name: "", description: "", level: 20 });
+      showSuccess("Role created successfully.");
+    } catch (createError) {
+      showError(createError instanceof Error ? createError.message : "Unexpected error.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function editRole() {
+    if (!selectedRole || isPending) return;
+
+    setPendingAction("role_edit");
+
+    try {
+      const response = await fetch(`/api/admin/roles/${selectedRole.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(roleEditForm),
+      });
+
+      const json = (await response.json()) as { role?: RoleItem; error?: string };
+      if (!response.ok || !json.role) {
+        throw new Error(json.error ?? "Failed to update role.");
+      }
+
+      setRoles((prev) => sortRoles(prev.map((role) => (role.id === selectedRole.id ? (json.role as RoleItem) : role))));
+      setRoleEditOpen(false);
+      setSelectedRole(null);
+      showSuccess("Role updated successfully.");
+    } catch (editError) {
+      showError(editError instanceof Error ? editError.message : "Unexpected error.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function removeRole() {
+    if (!selectedRole || isPending) return;
+
+    setPendingAction("role_remove");
+
+    try {
+      const response = await fetch(`/api/admin/roles/${selectedRole.id}`, {
+        method: "DELETE",
+      });
+
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(json.error ?? "Failed to remove role.");
+      }
+
+      setRoles((prev) => prev.filter((role) => role.id !== selectedRole.id));
+      setRoleDeleteOpen(false);
+      setSelectedRole(null);
+      showSuccess("Role removed successfully.");
+    } catch (removeError) {
+      showError(removeError instanceof Error ? removeError.message : "Unexpected error.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  const userColumns: ColumnDef<UserItem>[] = [
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <button
+          type="button"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+        >
+          Name
+          <ArrowUpDown className="h-3.5 w-3.5" />
+        </button>
+      ),
+      cell: ({ row }) => <span className="font-medium text-neutral-900 dark:text-white">{row.original.name}</span>,
+    },
+    {
+      accessorKey: "email",
+      header: "Email",
+      cell: ({ row }) => row.original.email,
+    },
+    {
+      accessorKey: "role",
+      header: "Role",
+      cell: ({ row }) => (
+        <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300">
+          {row.original.role}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "createdAt",
+      header: ({ column }) => (
+        <button
+          type="button"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+        >
+          Created
+          <ArrowUpDown className="h-3.5 w-3.5" />
+        </button>
+      ),
+      cell: ({ row }) => row.original.createdAt,
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      header: "Actions",
+      cell: ({ row }) => {
+        const user = row.original;
+
+        return (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                disabled={isPending}
+                className="inline-flex items-center rounded-lg border border-neutral-200 p-1.5 text-neutral-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content className="z-50 min-w-44 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+                <DropdownMenu.Item
+                  onClick={() => openEditModal(user)}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
                 >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content className="z-50 min-w-44 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
-                  <DropdownMenu.Item
-                    onClick={() => openEditModal(user)}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  >
-                    <SquarePen className="h-3.5 w-3.5" />
-                    Edit
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    onClick={() => openRoleModal(user)}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  >
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    Role
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    onClick={() => openPasswordModal(user)}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  >
-                    <KeyRound className="h-3.5 w-3.5" />
-                    Password
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    onClick={() => openDeleteModal(user)}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-600 outline-none hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Archive
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          );
-        },
+                  <SquarePen className="h-3.5 w-3.5" />
+                  Edit
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onClick={() => openRoleModal(user)}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Role
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onClick={() => openPasswordModal(user)}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-700 outline-none hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Password
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onClick={() => openDeleteModal(user)}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-600 outline-none hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Archive
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        );
       },
+    },
+  ];
+
+  const rolesColumns: ColumnDef<RoleItem>[] = [
+    {
+      accessorKey: "key",
+      header: "Key",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.key}</span>,
+    },
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => row.original.name,
+    },
+    {
+      accessorKey: "level",
+      header: ({ column }) => (
+        <button
+          type="button"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="inline-flex items-center gap-1.5 font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+        >
+          Level
+          <ArrowUpDown className="h-3.5 w-3.5" />
+        </button>
+      ),
+      cell: ({ row }) => row.original.level,
+    },
+    {
+      accessorKey: "description",
+      header: "Description",
+      cell: ({ row }) => row.original.description ?? "-",
+    },
+    {
+      id: "role_actions",
+      header: "Actions",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => openRoleEditModal(row.original)}
+            disabled={isPending}
+            className="rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-700 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => openRoleDeleteModal(row.original)}
+            disabled={isPending || row.original.isSystem}
+            className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/60 dark:text-red-300"
+          >
+            Remove
+          </button>
+        </div>
+      ),
+    },
   ];
 
   const archivedColumns: ColumnDef<UserItem>[] = [
@@ -479,7 +681,7 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
           <div>
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">Users Management</h2>
             <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-              All user actions are handled through confirmation modals and protected by single-action processing.
+              Manage your users with role-based access controls and safe confirmation flows.
             </p>
           </div>
 
@@ -490,13 +692,41 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingAction === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            New
+            New User
           </button>
         </div>
 
         <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
           <Users className="h-3.5 w-3.5" />
-          {activeUsers.length} active users, {archivedUsers.length} archived users
+          {activeUsers.length} active users, {archivedUsers.length} archived users, {roles.length} active roles
+        </div>
+
+        <div className="mb-6 rounded-lg border border-neutral-200/70 bg-neutral-50 p-3 dark:border-neutral-800/70 dark:bg-neutral-900/70">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-white">Role Based CRUD</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                Create, edit, and remove roles dynamically based on your project requirements.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRoleCreateOpen(true)}
+              disabled={isPending}
+              className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-900/60 dark:bg-neutral-800 dark:text-violet-300"
+            >
+              {pendingAction === "role_create" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              New Role
+            </button>
+          </div>
+          <DataTable
+            columns={rolesColumns}
+            data={roles}
+            filterColumnId="name"
+            filterPlaceholder="Search role..."
+            emptyMessage="No roles found."
+            pageSize={5}
+          />
         </div>
 
         <DataTable
@@ -578,17 +808,21 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             placeholder="Password"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
-          <select
+          <Select
             value={createForm.role}
-            onChange={(event) => setCreateForm((prev) => ({ ...prev, role: event.target.value as Role }))}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+            onValueChange={(value) => setCreateForm((prev) => ({ ...prev, role: value }))}
           >
-            {roles.map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              {roles.map((role) => (
+                <SelectItem key={role.id} value={role.key}>
+                  {role.name} ({role.key})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </Modal>
 
@@ -635,17 +869,21 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             placeholder="Email"
             className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
           />
-          <select
+          <Select
             value={editForm.role}
-            onChange={(event) => setEditForm((prev) => ({ ...prev, role: event.target.value as Role }))}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+            onValueChange={(value) => setEditForm((prev) => ({ ...prev, role: value }))}
           >
-            {roles.map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              {roles.map((role) => (
+                <SelectItem key={role.id} value={role.key}>
+                  {role.name} ({role.key})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </Modal>
 
@@ -676,17 +914,18 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
           </>
         }
       >
-        <select
-          value={roleForm.role}
-          onChange={(event) => setRoleForm({ role: event.target.value as Role })}
-          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
-        >
-          {roles.map((role) => (
-            <option key={role} value={role}>
-              {role}
-            </option>
-          ))}
-        </select>
+        <Select value={roleForm.role} onValueChange={(value) => setRoleForm({ role: value })}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select role" />
+          </SelectTrigger>
+          <SelectContent>
+            {roles.map((role) => (
+              <SelectItem key={role.id} value={role.key}>
+                {role.name} ({role.key})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Modal>
 
       <Modal
@@ -792,6 +1031,151 @@ export function UsersManagement({ initialUsers }: UsersManagementProps) {
             >
               {pendingAction === "reactivate" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirm Reactivate
+            </button>
+          </>
+        }
+      />
+
+      <Modal
+        open={roleCreateOpen}
+        onClose={() => (isPending ? null : setRoleCreateOpen(false))}
+        title="Create role"
+        description="Add a new role to the system."
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setRoleCreateOpen(false)}
+              disabled={isPending}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={createRole}
+              disabled={isPending}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {pendingAction === "role_create" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Confirm Create
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <input
+            required
+            value={roleCreateForm.key}
+            onChange={(event) => setRoleCreateForm((prev) => ({ ...prev, key: event.target.value }))}
+            placeholder="Role key (ex: SUPPORT_AGENT)"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm uppercase dark:border-neutral-700 dark:bg-neutral-800"
+          />
+          <input
+            required
+            value={roleCreateForm.name}
+            onChange={(event) => setRoleCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+            placeholder="Role name"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+          />
+          <textarea
+            value={roleCreateForm.description}
+            onChange={(event) => setRoleCreateForm((prev) => ({ ...prev, description: event.target.value }))}
+            placeholder="Description"
+            className="min-h-20 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+          />
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={roleCreateForm.level}
+            onChange={(event) =>
+              setRoleCreateForm((prev) => ({ ...prev, level: Number(event.target.value || 1) }))
+            }
+            placeholder="Level"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+          />
+        </div>
+      </Modal>
+
+      <Modal
+        open={roleEditOpen}
+        onClose={() => (isPending ? null : setRoleEditOpen(false))}
+        title="Edit role"
+        description={`Update role settings for ${selectedRole?.key ?? "this role"}.`}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setRoleEditOpen(false)}
+              disabled={isPending}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={editRole}
+              disabled={isPending}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {pendingAction === "role_edit" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Confirm Update
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <input
+            required
+            value={roleEditForm.name}
+            onChange={(event) => setRoleEditForm((prev) => ({ ...prev, name: event.target.value }))}
+            placeholder="Role name"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+          />
+          <textarea
+            value={roleEditForm.description}
+            onChange={(event) => setRoleEditForm((prev) => ({ ...prev, description: event.target.value }))}
+            placeholder="Description"
+            className="min-h-20 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+          />
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={roleEditForm.level}
+            onChange={(event) =>
+              setRoleEditForm((prev) => ({ ...prev, level: Number(event.target.value || 1) }))
+            }
+            placeholder="Level"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+          />
+        </div>
+      </Modal>
+
+      <Modal
+        open={roleDeleteOpen}
+        onClose={() => (isPending ? null : setRoleDeleteOpen(false))}
+        title="Remove role"
+        description={`Remove role ${selectedRole?.key ?? ""}? This cannot be undone.`}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setRoleDeleteOpen(false)}
+              disabled={isPending}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium disabled:opacity-60 dark:border-neutral-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={removeRole}
+              disabled={isPending || selectedRole?.isSystem}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {pendingAction === "role_remove" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Confirm Remove
             </button>
           </>
         }

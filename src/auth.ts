@@ -2,8 +2,10 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compareSync } from "bcryptjs";
 import { jwtVerify, SignJWT } from "jose";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import { DEFAULT_ROLE_KEY, getFallbackRoleLevel } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 
 const credentialsSchema = z.object({
@@ -25,6 +27,14 @@ const dayMs = 24 * 60 * 60 * 1000;
 const jwtIssuer = "next-template-auth";
 const jwtAudience = "next-template-clients";
 
+function isMissingRoleTableError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2021" &&
+    String(error.meta?.modelName ?? "") === "Role"
+  );
+}
+
 function getJwtSecret() {
   const value = process.env.AUTH_JWT_SECRET ?? process.env.AUTH_SECRET;
   if (!value) {
@@ -38,6 +48,7 @@ async function createSignedToken(payload: {
   name: string;
   email: string;
   role: string;
+  roleLevel: number;
   tokenType: "access" | "refresh";
   expiresIn: string;
 }) {
@@ -47,6 +58,7 @@ async function createSignedToken(payload: {
       name: payload.name,
       email: payload.email,
       role: payload.role,
+      roleLevel: payload.roleLevel,
     },
     tokenType: payload.tokenType,
   })
@@ -100,12 +112,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        const user = await prisma.user.findFirst({
-          where: {
-            email: parsed.data.email,
-            deletedAt: null,
-          },
-        });
+        let user: {
+          id: string;
+          name: string;
+          email: string;
+          role: string;
+          hashedPassword: string;
+          roleMeta?: { level: number; deletedAt: Date | null } | null;
+        } | null = null;
+
+        try {
+          user = await prisma.user.findFirst({
+            where: {
+              email: parsed.data.email,
+              deletedAt: null,
+            },
+            include: {
+              roleMeta: {
+                select: {
+                  level: true,
+                  deletedAt: true,
+                },
+              },
+            },
+          });
+        } catch (error) {
+          if (!isMissingRoleTableError(error)) {
+            throw error;
+          }
+
+          // Backward-compat fallback before Role table is migrated.
+          user = await prisma.user.findFirst({
+            where: {
+              email: parsed.data.email,
+              deletedAt: null,
+            },
+          });
+        }
 
         if (!user) {
           return null;
@@ -125,6 +168,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           email: user.email,
           role: user.role,
+          roleLevel: user.roleMeta && !user.roleMeta.deletedAt
+            ? user.roleMeta.level
+            : getFallbackRoleLevel(user.role),
         };
       },
     }),
@@ -138,11 +184,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             : typeof token.id === "string"
               ? token.id
               : crypto.randomUUID();
-        const userRole = typeof user.role === "string" ? user.role : "VIEWER";
+        const userRole = typeof user.role === "string" ? user.role : DEFAULT_ROLE_KEY;
+        const userRoleLevel =
+          typeof user.roleLevel === "number"
+            ? user.roleLevel
+            : getFallbackRoleLevel(userRole);
         const userName = typeof user.name === "string" ? user.name : "";
         const userEmail = typeof user.email === "string" ? user.email : "";
         token.id = userId;
         token.role = userRole;
+        token.roleLevel = userRoleLevel;
         token.name = userName;
         token.email = userEmail;
         token.accessToken = await createSignedToken({
@@ -150,6 +201,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: userName,
           email: userEmail,
           role: userRole,
+          roleLevel: userRoleLevel,
           tokenType: "access",
           expiresIn: `${accessTokenDays}d`,
         });
@@ -158,6 +210,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: userName,
           email: userEmail,
           role: userRole,
+          roleLevel: userRoleLevel,
           tokenType: "refresh",
           expiresIn: `${refreshTokenDays}d`,
         });
@@ -194,6 +247,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     name?: unknown;
                     email?: unknown;
                     role?: unknown;
+                    roleLevel?: unknown;
                   })
                 : null;
             const refreshName =
@@ -207,16 +261,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             const refreshRole =
               typeof refreshUser?.role === "string"
                 ? refreshUser.role
-                : String(token.role ?? "VIEWER");
+                : String(token.role ?? DEFAULT_ROLE_KEY);
+            const refreshRoleLevel =
+              typeof refreshUser?.roleLevel === "number"
+                ? refreshUser.roleLevel
+                : typeof token.roleLevel === "number"
+                  ? token.roleLevel
+                  : getFallbackRoleLevel(refreshRole);
 
             token.accessToken = await createSignedToken({
               userId: String(token.id),
               name: refreshName,
               email: refreshEmail,
               role: refreshRole,
+              roleLevel: refreshRoleLevel,
               tokenType: "access",
               expiresIn: `${accessTokenDays}d`,
             });
+            token.roleLevel = refreshRoleLevel;
             token.accessTokenExpiresAt = Date.now() + accessTokenDays * dayMs;
             token.tokenError = undefined;
           } else {
@@ -232,6 +294,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = String(token.id);
         session.user.role = token.role as typeof session.user.role;
+        session.user.roleLevel =
+          typeof token.roleLevel === "number"
+            ? token.roleLevel
+            : getFallbackRoleLevel(session.user.role);
       }
       session.accessToken = typeof token.accessToken === "string" ? token.accessToken : null;
       session.refreshToken = typeof token.refreshToken === "string" ? token.refreshToken : null;
